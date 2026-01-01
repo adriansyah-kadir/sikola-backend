@@ -64,10 +64,6 @@ async fn update(
         return Err((StatusCode::UNAUTHORIZED, "unauthorized"));
     }
 
-    if class.name == body.name {
-        return Err((StatusCode::NOT_MODIFIED, "no change"));
-    }
-
     if classes::Entity::find_by_name(&body.name)
         .filter(classes::Column::Id.ne(id))
         .exists(&db)
