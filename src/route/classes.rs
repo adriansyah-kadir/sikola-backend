@@ -1,5 +1,5 @@
 use crate::{
-    model::classes,
+    model::{classes, students_classes},
     utils::{self, jwt::JWTClaims},
 };
 use axum::{
@@ -9,7 +9,8 @@ use axum::{
     response::IntoResponse,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QuerySelect, RelationTrait, prelude::Expr, sea_query::IntoCondition,
 };
 
 pub fn routes(state: crate::app::App) -> axum::Router {
@@ -123,11 +124,33 @@ async fn create(
         .map_err(utils::handle_error)
 }
 
-#[axum::debug_handler]
-async fn list(State(db): State<crate::app::Db>) -> impl axum::response::IntoResponse {
-    classes::Entity::find()
-        .all(&db)
-        .await
-        .map(Json)
-        .map_err(utils::handle_error)
+#[axum::debug_handler(state = crate::app::App)]
+async fn list(
+    claims: Option<JWTClaims>,
+    State(db): State<crate::app::Db>,
+) -> impl axum::response::IntoResponse {
+    match claims {
+        Some(claims) => classes::Entity::find()
+            .join(
+                sea_orm::JoinType::LeftJoin,
+                students_classes::Relation::Classes
+                    .def()
+                    .rev()
+                    .on_condition(move |_, r| {
+                        Expr::col((r, students_classes::Column::StudentId))
+                            .eq(claims.sub)
+                            .into_condition()
+                    }),
+            )
+            .filter(students_classes::Column::ClassId.is_null())
+            .all(&db)
+            .await
+            .map(Json)
+            .map_err(utils::handle_error),
+        None => classes::Entity::find()
+            .all(&db)
+            .await
+            .map(Json)
+            .map_err(utils::handle_error),
+    }
 }

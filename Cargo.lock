@@ -2585,7 +2585,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sikola-rust2"
+name = "sikola-rust"
 version = "0.1.0"
 dependencies = [
  "axum",
