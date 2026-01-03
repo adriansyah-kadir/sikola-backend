@@ -1,3 +1,4 @@
+use crate::app::{App, Db};
 use crate::{
     model::{classes, students_classes},
     utils::{self, jwt::JWTClaims},
@@ -22,10 +23,47 @@ pub fn routes(state: crate::app::App) -> axum::Router {
         .route("/{id}", get(info))
         .route("/{id}", post(update))
         .route("/{id}", delete(remove))
+        .route("/{id}/join", post(join))
         .route("/available", get(available))
         .with_state(state)
 }
 
+#[axum::debug_handler(state = App)]
+async fn join(
+    claims: JWTClaims,
+    State(db): State<Db>,
+    Path(id): Path<uuid::Uuid>,
+) -> impl IntoResponse {
+    let class = classes::Entity::find_by_id(id)
+        .one(&db)
+        .await
+        .map_err(utils::handle_error)?
+        .ok_or((StatusCode::NOT_FOUND, "not found"))?;
+
+    if class.teacher_id == claims.sub {
+        return Err((StatusCode::BAD_REQUEST, "teacher cant join"));
+    }
+
+    if let Some(student_classes) = students_classes::Entity::find_by_id((claims.sub, id))
+        .one(&db)
+        .await
+        .map_err(utils::handle_error)?
+    {
+        return Ok(Json(student_classes));
+    } else {
+        students_classes::Entity::insert(students_classes::ActiveModel {
+            student_id: sea_orm::Set(claims.sub),
+            class_id: sea_orm::Set(id),
+            ..Default::default()
+        })
+        .exec_with_returning(&db)
+        .await
+        .map(Json)
+        .map_err(utils::handle_error)
+    }
+}
+
+#[axum::debug_handler(state = App)]
 async fn available(claims: JWTClaims, State(db): State<crate::app::Db>) -> impl IntoResponse {
     classes::Entity::find()
         .join(
