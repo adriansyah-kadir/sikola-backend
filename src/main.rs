@@ -4,6 +4,7 @@ mod app;
 mod model;
 mod route;
 mod utils;
+mod repos;
 
 #[tokio::main]
 async fn main() {
