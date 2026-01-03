@@ -22,7 +22,28 @@ pub fn routes(state: crate::app::App) -> axum::Router {
         .route("/{id}", get(info))
         .route("/{id}", post(update))
         .route("/{id}", delete(remove))
+        .route("/available", get(available))
         .with_state(state)
+}
+
+async fn available(claims: JWTClaims, State(db): State<crate::app::Db>) -> impl IntoResponse {
+    classes::Entity::find()
+        .join(
+            sea_orm::JoinType::LeftJoin,
+            classes::Relation::StudentsClasses
+                .def()
+                .on_condition(move |_, r| {
+                    Expr::col((r, students_classes::Column::StudentId))
+                        .eq(claims.sub)
+                        .into_condition()
+                }),
+        )
+        .filter(students_classes::Column::ClassId.is_null())
+        .filter(classes::Column::TeacherId.ne(claims.sub))
+        .all(&db)
+        .await
+        .map(Json)
+        .map_err(utils::handle_error)
 }
 
 #[axum::debug_handler(state = crate::app::App)]
