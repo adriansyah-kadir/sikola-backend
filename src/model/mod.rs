@@ -2,5 +2,7 @@
 
 pub mod prelude;
 
+pub mod class_memberships;
 pub mod classes;
-pub mod students_classes;
+pub mod sea_orm_active_enums;
+pub mod classes_extra;

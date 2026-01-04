@@ -1,5 +1,6 @@
-use axum::http::HeaderMap;
-use reqwest::Client;
+use axum::{http::HeaderMap, response::sse::KeepAlive};
+use keycloak::models::UserRepresentation;
+use reqwest::{Client, StatusCode};
 use std::{collections::HashMap, env};
 
 pub async fn client_token() -> Result<String, Box<dyn std::error::Error>> {
@@ -16,7 +17,7 @@ pub async fn client_token() -> Result<String, Box<dyn std::error::Error>> {
 
     #[derive(serde::Deserialize)]
     struct Response {
-        pub access_token: String
+        pub access_token: String,
     }
 
     let client = Client::new();
@@ -50,21 +51,60 @@ pub async fn get_config()
     })
 }
 
+fn safe_user_data(v: keycloak::models::UserRepresentation) -> keycloak::models::UserRepresentation {
+    keycloak::models::UserRepresentation {
+        id: v.id,
+        username: v.username,
+        first_name: v.first_name,
+        last_name: v.last_name,
+        email: v.email,
+        email_verified: v.email_verified,
+        attributes: v.attributes,
+        enabled: v.enabled,
+        ..Default::default()
+    }
+}
+
 #[derive(Debug)]
 pub enum RequestError<T> {
     Other(Box<dyn std::error::Error>),
     Keycloak(keycloak::apis::Error<T>),
 }
 
+pub async fn realm_user(
+    realm: &str,
+    user_id: &str,
+) -> Result<
+    Option<UserRepresentation>,
+    RequestError<keycloak::apis::users_api::AdminRealmsRealmUsersUserIdGetError>,
+> {
+    let config = get_config().await.map_err(RequestError::Other)?;
+    keycloak::apis::users_api::admin_realms_realm_users_user_id_get(&config, realm, user_id, None)
+        .await
+        .map(|v| Some(safe_user_data(v)))
+        .or_else(|err| match err {
+            keycloak::apis::Error::ResponseError(response_content) => match response_content.status
+            {
+                StatusCode::NOT_FOUND => Ok(None),
+                _ => Err(RequestError::Keycloak(
+                    keycloak::apis::Error::ResponseError(response_content),
+                )),
+            },
+            _ => Err(RequestError::Keycloak(err)),
+        })
+}
+
 pub async fn realm_users(
     realm: &str,
+    search: Option<keycloak::models::UserRepresentation>,
 ) -> Result<
     Vec<keycloak::models::UserRepresentation>,
     RequestError<keycloak::apis::users_api::AdminRealmsRealmUsersGetError>,
 > {
     let config = get_config().await.map_err(RequestError::Other)?;
     keycloak::apis::users_api::admin_realms_realm_users_get(
-        &config, realm,
+        &config,
+        realm,
         // brief_representation,
         // email,
         // email_verified,
@@ -79,8 +119,22 @@ pub async fn realm_users(
         // q,
         // search,
         // username,
-        None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+        None,
+        search.clone().and_then(|v| v.email).as_deref(),
+        search.clone().and_then(|v| v.email_verified),
+        search.clone().and_then(|v| v.enabled),
+        None,
+        None,
+        search.clone().and_then(|v| v.first_name).as_deref(),
+        None,
+        None,
+        search.clone().and_then(|v| v.last_name).as_deref(),
+        None,
+        None,
+        None,
+        search.clone().and_then(|v| v.username).as_deref(),
     )
     .await
+    .map(|v| v.iter().map(|v| v.to_owned()).map(safe_user_data).collect())
     .map_err(RequestError::Keycloak)
 }
