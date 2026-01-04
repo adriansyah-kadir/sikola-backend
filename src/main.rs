@@ -27,7 +27,7 @@ async fn main() {
 
     let service = axum::Router::new()
         .nest("/classes", route::classes::routes(state.clone()))
-        .nest("/students_classes", route::students_classes::routes(state.clone()))
+        .nest("/users", route::users::routes(state.clone()))
         .layer(middleware);
 
     let listener = tokio::net::TcpListener::bind("localhost:3000")

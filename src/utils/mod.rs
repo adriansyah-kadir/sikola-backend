@@ -1,5 +1,6 @@
 pub mod jwt;
 pub mod middleware;
+pub mod keycloak;
 
 pub fn handle_error<'a, T: std::fmt::Debug>(err: T) -> (axum::http::StatusCode, &'a str) {
     tracing::error!("{:?}", err);
