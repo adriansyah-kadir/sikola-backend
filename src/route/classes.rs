@@ -1,17 +1,12 @@
 use crate::app::{App, Db};
-use crate::model::classes_extra;
+use crate::model::{self, classes_extra};
 use crate::repos;
-use crate::utils::extractor::ClassWithMemberships;
+use crate::utils::extractor::{ClassWithMemberships, MembershipWithClass};
 use crate::{
     model::{class_memberships as memberships, classes},
     utils::{self, jwt::JWTClaims},
 };
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
 };
@@ -54,27 +49,26 @@ async fn class_memberships_update() {
 
 async fn class_memberships(
     claims: JWTClaims,
-    ClassWithMemberships((class, memberships)): ClassWithMemberships,
+    class: classes::Model,
+    State(db): State<Db>,
 ) -> impl IntoResponse {
     if class.teacher_id != claims.sub {
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err((StatusCode::UNAUTHORIZED, "unauthorized"));
     }
 
-    Ok(Json(memberships))
+    model::prelude::ClassMemberships::find()
+        .filter(model::class_memberships::Column::ClassId.eq(class.id))
+        .all(&db)
+        .await
+        .map(Json)
+        .map_err(utils::handle_error)
 }
 
 async fn class_memberships_delete(
     claims: JWTClaims,
-    Path(member_id): Path<(uuid::Uuid, uuid::Uuid)>,
+    MembershipWithClass(membership, class): MembershipWithClass,
     State(db): State<crate::app::Db>,
 ) -> impl IntoResponse {
-    let (membership, class) = memberships::Entity::find_by_id(member_id)
-        .find_also_related(classes::Entity)
-        .one(&db)
-        .await
-        .map_err(utils::handle_error)?
-        .ok_or((StatusCode::NOT_FOUND, "membership not found"))?;
-
     if class.is_none_or(|c| c.teacher_id != claims.sub) {
         return Err((StatusCode::UNAUTHORIZED, "unauthorized"));
     }
@@ -177,9 +171,7 @@ async fn class_create(
     State(db): State<crate::app::Db>,
     Json(body): Json<classes_extra::ClassRequiredBody>,
 ) -> impl axum::response::IntoResponse {
-    use sea_orm::ActiveValue;
-
-    if classes::Entity::find_by_name(body.name.clone())
+    if classes::Entity::find_by_name(&body.name)
         .exists(&db)
         .await
         .map_err(utils::handle_error)?
@@ -187,18 +179,16 @@ async fn class_create(
         return Err((StatusCode::CONFLICT, "name already used"));
     }
 
-    let insert = classes::ActiveModel {
-        name: ActiveValue::Set(body.name),
-        description: ActiveValue::Set(body.description),
-        teacher_id: ActiveValue::Set(claims.sub),
+    classes::ActiveModel {
+        name: sea_orm::Set(body.name),
+        description: sea_orm::Set(body.description),
+        teacher_id: sea_orm::Set(claims.sub),
         ..Default::default()
-    };
-
-    insert
-        .insert(&db)
-        .await
-        .map(Json)
-        .map_err(utils::handle_error)
+    }
+    .insert(&db)
+    .await
+    .map(Json)
+    .map_err(utils::handle_error)
 }
 
 #[axum::debug_handler(state = crate::app::App)]
