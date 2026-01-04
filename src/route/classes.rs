@@ -101,7 +101,7 @@ async fn class_memberships_join(
         return Err((StatusCode::BAD_REQUEST, "teacher cant join"));
     }
 
-    repos::class_members::find_or_insert_membership(db, claims.sub, class.id)
+    repos::class_members::find_or_insert_membership(db, class.id, claims.sub)
         .await
         .map(Json)
         .map_err(utils::handle_error)

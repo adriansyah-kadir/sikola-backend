@@ -4,13 +4,14 @@ use crate::{app::Db, model, model::prelude::*};
 
 pub async fn find_or_insert_membership(
     db: Db,
-    student_id: uuid::Uuid,
     class_id: uuid::Uuid,
+    student_id: uuid::Uuid,
 ) -> Result<model::class_memberships::Model, sea_orm::error::DbErr> {
-    let existing = ClassMemberships::find_by_id((student_id, class_id))
+    let existing = ClassMemberships::find_by_id((class_id, student_id))
         .one(&db)
         .await?;
 
+    println!("{existing:?}");
     if let Some(membership) = existing {
         Ok(membership)
     } else {
