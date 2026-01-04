@@ -1,7 +1,7 @@
 use crate::app::{App, Db};
 use crate::model::{self, classes_extra};
 use crate::repos;
-use crate::utils::extractor::{ClassWithMemberships, MembershipWithClass};
+use crate::utils::extractor::MembershipWithClass;
 use crate::{
     model::{class_memberships as memberships, classes},
     utils::{self, jwt::JWTClaims},
