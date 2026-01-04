@@ -11,7 +11,7 @@ use axum::{
     response::IntoResponse,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Related,
 };
 
 pub fn routes(state: crate::app::App) -> axum::Router {
@@ -25,7 +25,19 @@ pub fn routes(state: crate::app::App) -> axum::Router {
         .route("/{id}", delete(remove))
         .route("/{id}/join", post(join))
         .route("/available", get(available))
+        .route("/joined", get(joined))
         .with_state(state)
+}
+
+#[axum::debug_handler(state = App)]
+async fn joined(claims: JWTClaims, State(db): State<Db>) -> impl IntoResponse {
+    classes::Entity::find()
+        .inner_join(students_classes::Entity)
+        .filter(students_classes::Column::StudentId.eq(claims.sub))
+        .all(&db)
+        .await
+        .map(Json)
+        .map_err(utils::handle_error)
 }
 
 #[axum::debug_handler(state = App)]
@@ -44,22 +56,23 @@ async fn join(
         return Err((StatusCode::BAD_REQUEST, "teacher cant join"));
     }
 
-    if let Some(student_classes) = students_classes::Entity::find_by_id((claims.sub, id))
+    let data = students_classes::ActiveModel {
+        student_id: sea_orm::Set(claims.sub),
+        class_id: sea_orm::Set(id),
+        ..Default::default()
+    };
+
+    if let Some(joined) = students_classes::Entity::find_by_id((claims.sub, id))
         .one(&db)
         .await
         .map_err(utils::handle_error)?
     {
-        return Ok(Json(student_classes));
+        return Ok(Json(joined));
     } else {
-        students_classes::Entity::insert(students_classes::ActiveModel {
-            student_id: sea_orm::Set(claims.sub),
-            class_id: sea_orm::Set(id),
-            ..Default::default()
-        })
-        .exec_with_returning(&db)
-        .await
-        .map(Json)
-        .map_err(utils::handle_error)
+        data.insert(&db)
+            .await
+            .map_err(utils::handle_error)
+            .map(Json)
     }
 }
 
